@@ -1,0 +1,59 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+node_modules/
+target/         # Rust build directory
+dist/
+dist-ssr/
+
+# Environment files
+.env
+.env.*          # Covers .env.local, .env.production, etc.
+
+# Local development files
+*.local
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDEs and editors
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Tauri
+/src-tauri/target/
+src-tauri/Cargo.lock # Optional: if you're using Cargo.lock only for deployment, not development
+
+# Optional: ignore build artifacts or cache from frontend frameworks (like Vite)
+.cache/
+.out/
+build/
+
+# Optional: if using pnpm
+.pnpm-debug.log
+.pnpm-store/
