@@ -6,6 +6,8 @@ import argparse
 import os
 import sys
 import time
+import re
+from collections import Counter
 
 class BrutalistReportScraper:
     """
@@ -185,20 +187,107 @@ class BrutalistReportScraper:
 
         return aggregated_data
 
+    def _normalize_text(self, text):
+        """Normalize text for better comparison"""
+        # Convert to lowercase
+        text = text.lower()
+        # Remove punctuation and extra spaces
+        text = re.sub(r'[^\w\s]', ' ', text)
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        return text
+
+    def _extract_key_phrases(self, text):
+        """Extract meaningful phrases and entities from text"""
+        normalized = self._normalize_text(text)
+        words = normalized.split()
+        
+        # Get single important words
+        important_words = []
+        # Get 2-word phrases
+        phrases = []
+        
+        stop_words = {
+            "a", "an", "the", "and", "but", "or", "for", "nor", "on", "at",
+            "to", "from", "by", "with", "in", "of", "is", "are", "was", "were",
+            "be", "been", "being", "have", "has", "had", "do", "does", "did",
+            "can", "could", "will", "would", "shall", "should", "may", "might",
+            "must", "that", "which", "who", "whom", "this", "these", "those",
+            "how", "why", "when", "where", "what",
+            # custom
+            "hn", "nyt", "know", "best", "than", "just", "your", "its",
+            "hint and answers", "you"
+        }
+        
+        # Extract meaningful single words (longer than 2 chars, not stop words)
+        for word in words:
+            if len(word) > 2 and word not in stop_words:
+                important_words.append(word)
+        
+        # Extract 2-word phrases
+        for i in range(len(words) - 1):
+            if (len(words[i]) > 2 and len(words[i + 1]) > 2 and 
+                words[i] not in stop_words and words[i + 1] not in stop_words):
+                phrases.append(f"{words[i]} {words[i + 1]}")
+        
+        return important_words, phrases
+
+    def _calculate_similarity_score(self, text1, text2):
+        """Calculate comprehensive similarity score between two texts with stricter grouping"""
+        words1, phrases1 = self._extract_key_phrases(text1)
+        words2, phrases2 = self._extract_key_phrases(text2)
+        
+        # Require at least one phrase match for high similarity
+        phrase_overlap = len(set(phrases1) & set(phrases2))
+        if phrase_overlap == 0:
+            # If no phrase overlap, require significant word overlap
+            word_overlap = len(set(words1) & set(words2))
+            if word_overlap < 3:  # Stricter requirement
+                return 0
+            word_score = word_overlap * 1.5
+        else:
+            # Phrase matches get high scores
+            word_overlap = len(set(words1) & set(words2))
+            word_score = word_overlap * 2
+            phrase_score = phrase_overlap * 6  # Higher weight for phrases
+            word_score += phrase_score
+        
+        # Semantic coherence check - penalize if headlines are about different topics
+        # Check for conflicting keywords that suggest different topics
+        conflicting_pairs = [
+            ('election', 'sports'), ('politics', 'gaming'), ('business', 'weather'),
+            ('covid', 'entertainment'), ('war', 'tech'), ('climate', 'fashion')
+        ]
+        
+        text1_lower = text1.lower()
+        text2_lower = text2.lower()
+        
+        for pair in conflicting_pairs:
+            if ((pair[0] in text1_lower and pair[1] in text2_lower) or 
+                (pair[1] in text1_lower and pair[0] in text2_lower)):
+                word_score *= 0.3  # Heavy penalty for conflicting topics
+        
+        # Length penalty to avoid grouping very different length headlines
+        len_diff = abs(len(words1) - len(words2))
+        length_penalty = min(len_diff * 0.5, 2)  # Reduced penalty
+        
+        total_score = word_score - length_penalty
+        return max(0, total_score)
+
     def find_common_headlines(self, news_data, is_topic=False, is_last_week=False):
-        """Identifies headlines common across different sources"""
+        """Identifies headlines common across different sources with improved grouping"""
         if not news_data or "sources" not in news_data:
             return []
 
-        # Set similarity threshold based on context
+        # Set similarity threshold based on context - higher thresholds for stricter grouping
         if is_topic and is_last_week:
-            similarity_threshold_count = self.similarity_thresholds["topic_last_week"]
+            similarity_threshold = 12  # Increased
         elif is_topic:
-            similarity_threshold_count = self.similarity_thresholds["topic"]
+            similarity_threshold = 9   # Increased
         elif is_last_week:
-            similarity_threshold_count = self.similarity_thresholds["general_last_week"]
+            similarity_threshold = 14  # Increased
         else:
-            similarity_threshold_count = self.similarity_thresholds["general"]
+            similarity_threshold = 10  # Increased
 
         # Flatten all headlines
         all_headlines = []
@@ -223,7 +312,7 @@ class BrutalistReportScraper:
         common_topics = []
         processed_headlines = set()
 
-        # Compare headlines
+        # Compare headlines with improved similarity scoring
         for i, headline1 in enumerate(all_headlines, 1):
             if headline1["title"] in processed_headlines:
                 self.update_progress(json.dumps({
@@ -243,12 +332,12 @@ class BrutalistReportScraper:
                 if headline2["title"] in processed_headlines:
                     continue
 
-                # Similarity check
-                words1 = set(headline1["title"].lower().split())
-                words2 = set(headline2["title"].lower().split())
-                common_words = words1.intersection(words2)
+                # Calculate similarity score
+                similarity_score = self._calculate_similarity_score(
+                    headline1["title"], headline2["title"]
+                )
 
-                if len(common_words) >= similarity_threshold_count:
+                if similarity_score >= similarity_threshold:
                     if not similar_headlines:
                         similar_headlines.append({
                             "source": headline1["source"],
@@ -266,21 +355,52 @@ class BrutalistReportScraper:
                         "source_link": headline2.get("source_link"),
                     })
 
-            # Process similar headlines
+            # Process similar headlines with stricter requirements
             if similar_headlines and len(similar_headlines) >= self.min_group_size:
                 sources = {h["source"] for h in similar_headlines}
-                if len(sources) >= 2:
+                # Require at least 3 different sources for better validation
+                if len(sources) >= 3:
                     topic_name = self.generate_topic_name(similar_headlines)
-                    common_topics.append({
-                        "id": len(common_topics) + 1,
-                        "topic_name": topic_name,
-                        "count": len(similar_headlines),
-                        "sources_count": len(sources),
-                        "headlines": similar_headlines,
-                    })
+                    
+                    # =====================================================================
+                    # EXPERIMENTAL FEATURE: Topic Image Suggestions
+                    # This section adds image suggestions for topics
+                    # If you want to remove this feature, delete this code block
+                    # =====================================================================
+                    image_keywords = []
+                    if hasattr(self, 'suggest_image_keywords'):
+                        # Get the topic category if available
+                        topic_category = news_data.get("topic")
+                        # Generate image keywords
+                        image_keywords = self.suggest_image_keywords(topic_name, topic_category)
+                    # =====================================================================
+                    # END OF EXPERIMENTAL FEATURE
+                    # =====================================================================
+                    
+                    # Skip if topic name is too generic or too short
+                    if len(topic_name.split()) >= 2 and not self._is_generic_topic(topic_name):
+                        topic_data = {
+                            "id": len(common_topics) + 1,
+                            "topic_name": topic_name,
+                            "count": len(similar_headlines),
+                            "sources_count": len(sources),
+                            "headlines": similar_headlines,
+                        }
+                        
+                        # =====================================================================
+                        # EXPERIMENTAL FEATURE: Add image keywords to the topic data
+                        # If you want to remove this feature, delete these lines
+                        # =====================================================================
+                        if image_keywords:
+                            topic_data["image_keywords"] = image_keywords
+                        # =====================================================================
+                        # END OF EXPERIMENTAL FEATURE
+                        # =====================================================================
+                        
+                        common_topics.append(topic_data)
 
-                    for headline in similar_headlines:
-                        processed_headlines.add(headline["title"])
+                        for headline in similar_headlines:
+                            processed_headlines.add(headline["title"])
 
             self.update_progress(json.dumps({
                 "status": "progress",
@@ -298,40 +418,153 @@ class BrutalistReportScraper:
 
         return common_topics
 
+    def _is_generic_topic(self, topic_name):
+        """Check if a topic name is too generic"""
+        generic_terms = [
+            "new report", "latest news", "breaking news", "recent update",
+            "major announcement", "important news", "big news", "top story"
+        ]
+        topic_lower = topic_name.lower()
+        return any(generic in topic_lower for generic in generic_terms)
+
     def generate_topic_name(self, headlines):
-        """Generates a descriptive name for a group of related headlines"""
+        """Enhanced topic name generation with better insight extraction"""
         stop_words = {
             "a", "an", "the", "and", "but", "or", "for", "nor", "on", "at",
             "to", "from", "by", "with", "in", "of", "is", "are", "was", "were",
             "be", "been", "being", "have", "has", "had", "do", "does", "did",
             "can", "could", "will", "would", "shall", "should", "may", "might",
             "must", "that", "which", "who", "whom", "this", "these", "those",
-            "how", "why", "when", "where", "what", "hn", "nyt", "know", "best",
-            "than", "just"
+            "how", "why", "when", "where", "what",
+            # custom
+            "hn", "nyt", "know", "best", "than", "just", "your", "its",
+            "hint and answers", "you"
         }
 
-        all_words = []
+        # Extract specific entities and key terms
+        all_entities = []
+        all_important_phrases = []
+        all_keywords = []
+        
         for headline in headlines:
-            words = headline["title"].lower().split()
-            words = [
-                word.strip(".,;:!?()-\"'")
-                for word in words
-                if word.lower() not in stop_words and len(word) > 2
-            ]
-            all_words.extend(words)
+            title = headline["title"]
+            normalized = self._normalize_text(title)
+            words = normalized.split()
+            
+            # Extract entities (capitalized words from original)
+            original_words = title.split()
+            for word in original_words:
+                clean_word = re.sub(r'[^\w]', '', word)
+                if (len(clean_word) > 2 and word[0].isupper() and 
+                    clean_word.lower() not in stop_words):
+                    all_entities.append(clean_word)
+            
+            # Extract meaningful 3-4 word phrases
+            for i in range(len(words) - 2):
+                if (len(words[i]) > 2 and len(words[i + 1]) > 2 and len(words[i + 2]) > 2 and
+                    words[i] not in stop_words and words[i + 1] not in stop_words and 
+                    words[i + 2] not in stop_words):
+                    phrase = f"{words[i]} {words[i + 1]} {words[i + 2]}"
+                    all_important_phrases.append(phrase)
+                    
+                    # Also try 4-word phrases
+                    if (i < len(words) - 3 and len(words[i + 3]) > 2 and 
+                        words[i + 3] not in stop_words):
+                        phrase4 = f"{phrase} {words[i + 3]}"
+                        all_important_phrases.append(phrase4)
+            
+            # Extract important keywords (non-stop words)
+            for word in words:
+                if word not in stop_words and len(word) > 2:
+                    all_keywords.append(word)
 
-        word_counts = {}
-        for word in all_words:
-            word_counts[word] = word_counts.get(word, 0) + 1
+        # Count frequencies
+        entity_counter = Counter(all_entities)
+        phrase_counter = Counter(all_important_phrases)
+        keyword_counter = Counter(all_keywords)
+        
+        # Minimum frequency threshold
+        min_freq = max(2, len(headlines) // 4)
+        
+        # Try longer phrases first (4+ words) that appear frequently
+        long_phrases = [(phrase, count) for phrase, count in phrase_counter.most_common() 
+                       if count >= min_freq and len(phrase.split()) >= 4]
+        
+        if long_phrases:
+            return long_phrases[0][0].title()
+        
+        # Try 3-word phrases
+        medium_phrases = [(phrase, count) for phrase, count in phrase_counter.most_common() 
+                         if count >= min_freq and len(phrase.split()) == 3]
+        
+        if medium_phrases:
+            return medium_phrases[0][0].title()
+        
+        # Try entity + keyword combinations
+        common_entities = [(entity, count) for entity, count in entity_counter.most_common() 
+                          if count >= min_freq]
+        common_keywords = [(keyword, count) for keyword, count in keyword_counter.most_common() 
+                          if count >= min_freq]
+        
+        if common_entities and common_keywords:
+            entity = common_entities[0][0]
+            # Find a keyword that's not just the entity in lowercase
+            for keyword, _ in common_keywords:
+                if keyword.lower() != entity.lower():
+                    # Try to find context words that appear with this entity
+                    context_words = []
+                    for headline in headlines:
+                        if entity.lower() in headline["title"].lower():
+                            words = self._normalize_text(headline["title"]).split()
+                            for word in words:
+                                if (word != entity.lower() and word not in stop_words and 
+                                    len(word) > 2 and word in [k for k, _ in common_keywords[:5]]):
+                                    context_words.append(word)
+                    
+                    if context_words:
+                        context_counter = Counter(context_words)
+                        best_context = context_counter.most_common(1)[0][0]
+                        return f"{entity} {best_context.title()}"
+                    else:
+                        return f"{entity} {keyword.title()}"
+        
+        # Try just the most common entity with descriptive context
+        if common_entities:
+            entity = common_entities[0][0]
+            # Look for action words or descriptive terms
+            action_words = []
+            for headline in headlines:
+                if entity.lower() in headline["title"].lower():
+                    words = headline["title"].lower().split()
+                    for word in words:
+                        clean_word = re.sub(r'[^\w]', '', word)
+                        if (clean_word not in stop_words and len(clean_word) > 3 and
+                            clean_word != entity.lower() and
+                            any(action in clean_word for action in 
+                                ['announce', 'launch', 'report', 'reveal', 'update', 
+                                 'plan', 'face', 'deal', 'issue', 'problem', 'crisis'])):
+                            action_words.append(clean_word)
+            
+            if action_words:
+                action_counter = Counter(action_words)
+                best_action = action_counter.most_common(1)[0][0]
+                return f"{entity} {best_action.title()}"
+            
+            # Fallback to entity + most common keyword
+            if common_keywords:
+                return f"{entity} {common_keywords[0][0].title()}"
+        
+        # Final fallback - use most descriptive keywords
+        if len(common_keywords) >= 3:
+            return f"{common_keywords[0][0].title()} {common_keywords[1][0].title()} {common_keywords[2][0].title()}"
+        elif len(common_keywords) >= 2:
+            return f"{common_keywords[0][0].title()} {common_keywords[1][0].title()}"
+        elif len(common_keywords) >= 1:
+            return common_keywords[0][0].title()
 
-        sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-        top_words = [word for word, count in sorted_words[:5] if count >= 2]
-
-        if not top_words:
-            first_headline = headlines[0]["title"]
-            return first_headline[:50] + ("..." if len(first_headline) > 50 else "")
-
-        return " ".join(top_words[:3]).title()
+        # Ultimate fallback - use first headline truncated
+        first_headline = headlines[0]["title"]
+        return first_headline[:60] + ("..." if len(first_headline) > 60 else "")
 
     def update_progress(self, message):
         """Updates progress information"""

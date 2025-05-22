@@ -1,11 +1,12 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::process::Command;
-use tauri::command;
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use tauri::{command};
 
 #[command]
-fn run_python_script(topic: Option<String>, last_week: bool) -> Result<String, String> {
+async fn run_python_script(window: tauri::Window, topic: Option<String>, last_week: bool) -> Result<(), String> {
     let mut cmd_args = vec!["brutalist_report.py".to_string()];
     
     // Add topic if provided
@@ -29,22 +30,46 @@ fn run_python_script(topic: Option<String>, last_week: bool) -> Result<String, S
         "python3"
     };
     
-    // Execute Python script
-    match Command::new(python_cmd)
+    // Execute Python script with piped output
+    let mut child = Command::new(python_cmd)
         .args(&cmd_args)
-        .output()
-    {
-        Ok(output) => {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                Ok(stdout)
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                Err(format!("Python script failed: {}", stderr))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to execute Python script: {}", e))?;
+
+    // Get stdout handle
+    let stdout = child.stdout.take()
+        .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    
+    // Create a buffered reader
+    let reader = BufReader::new(stdout);
+    
+    // Read output line by line and emit events
+    for line in reader.lines() {
+        match line {
+            Ok(line) => {
+                if !line.trim().is_empty() {
+                    println!("Python output: {}", line); // Debug log
+                    window.emit("python-output", line)
+                        .map_err(|e| format!("Failed to emit event: {}", e))?;
+                }
+            }
+            Err(e) => {
+                return Err(format!("Error reading Python output: {}", e));
             }
         }
-        Err(e) => Err(format!("Failed to execute Python script: {}", e)),
     }
+
+    // Wait for the process to complete
+    let status = child.wait()
+        .map_err(|e| format!("Error waiting for Python process: {}", e))?;
+
+    if !status.success() {
+        return Err("Python script failed".to_string());
+    }
+
+    Ok(())
 }
 
 fn main() {
