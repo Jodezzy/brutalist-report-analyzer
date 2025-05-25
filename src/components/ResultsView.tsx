@@ -2,9 +2,12 @@
 
 import type React from "react"
 import { useState } from "react"
-import { Save, FolderOpen, HelpCircle, Layers } from "lucide-react"
+import { Save, HelpCircle, Layers, BarChart3 } from "lucide-react"
 import Button from "./ui/Button"
+import Modal from "./ui/Modal"
 import TopicGroupCard from "./TopicGroupCard"
+import WordCloud from "./WordCloud"
+import { useAnalysis } from "../hooks/useAnalysis"
 import type { AnalysisResult } from "../types/analysis"
 
 interface ResultsViewProps {
@@ -15,6 +18,8 @@ interface ResultsViewProps {
 
 const ResultsView: React.FC<ResultsViewProps> = ({ result, onSaveResults, onLoadResults }) => {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
+  const [showWordCloud, setShowWordCloud] = useState(false)
+  const { showSaveModal, saveModalMessage, setShowSaveModal } = useAnalysis()
 
   const toggleGroup = (index: number) => {
     const newSet = new Set(expandedGroups)
@@ -56,6 +61,15 @@ const ResultsView: React.FC<ResultsViewProps> = ({ result, onSaveResults, onLoad
 
         <div className="flex gap-3 relative">
           <div className="group relative">
+            <Button onClick={() => setShowWordCloud(!showWordCloud)} variant="outline" size="sm">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              {showWordCloud ? "Hide" : "Show"} Word Cloud
+            </Button>
+            <div className="absolute bottom-full mb-2 right-0 bg-gray-800 text-xs text-white p-2 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none">
+              {showWordCloud ? "Hide" : "Show"} word frequency visualization
+            </div>
+          </div>
+          <div className="group relative">
             <Button onClick={onSaveResults} variant="outline" size="sm">
               <Save className="h-4 w-4 mr-2" />
               Save JSON
@@ -64,17 +78,11 @@ const ResultsView: React.FC<ResultsViewProps> = ({ result, onSaveResults, onLoad
               Save analysis results to a JSON file
             </div>
           </div>
-          <div className="group relative">
-            <Button onClick={onLoadResults} variant="outline" size="sm">
-              <FolderOpen className="h-4 w-4 mr-2" />
-              Open JSON
-            </Button>
-            <div className="absolute bottom-full mb-2 right-0 bg-gray-800 text-xs text-white p-2 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none">
-              Load previously saved analysis results
-            </div>
-          </div>
         </div>
       </div>
+
+      {/* Word Cloud Section */}
+      {showWordCloud && <WordCloud result={result} />}
 
       <div className="flex items-center gap-2 px-2 bg-indigo-900/20 py-2 rounded-lg border border-indigo-800/30">
         <HelpCircle className="h-4 w-4 text-indigo-400 flex-shrink-0" />
@@ -92,6 +100,16 @@ const ResultsView: React.FC<ResultsViewProps> = ({ result, onSaveResults, onLoad
           />
         ))}
       </div>
+
+      {/* Save Success Modal */}
+      <Modal isOpen={showSaveModal} onClose={() => setShowSaveModal(false)} title="Save Results">
+        <div className="space-y-4">
+          <p className="text-gray-200 whitespace-pre-line">{saveModalMessage}</p>
+          <Button onClick={() => setShowSaveModal(false)} className="w-full">
+            Close
+          </Button>
+        </div>
+      </Modal>
     </div>
   )
 }

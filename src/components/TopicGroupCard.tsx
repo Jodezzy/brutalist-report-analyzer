@@ -1,8 +1,21 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
-import { ChevronDown, ChevronRight, ExternalLink, Hash, Globe, Clock, FileText, ImageIcon } from "lucide-react"
+import { useState } from "react"
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Hash,
+  Globe,
+  Clock,
+  FileText,
+  ImageIcon,
+  AlertTriangle,
+  ExternalLinkIcon,
+  AlertCircle,
+  Info,
+} from "lucide-react"
 import { cn } from "../utils"
 import type { TopicGroup } from "../types/analysis"
 
@@ -15,8 +28,6 @@ interface TopicGroupCardProps {
 const TopicGroupCard: React.FC<TopicGroupCardProps> = ({ group, isExpanded, onToggle }) => {
   // Group headlines by source
   const headlinesBySource: Record<string, Array<{ title: string; url: string; time?: string }>> = {}
-  const [topicImage, setTopicImage] = useState<string | null>(null)
-  const [imageLoading, setImageLoading] = useState(false)
   const [imageError, setImageError] = useState(false)
 
   group.headlines.forEach((headline) => {
@@ -33,6 +44,11 @@ const TopicGroupCard: React.FC<TopicGroupCardProps> = ({ group, isExpanded, onTo
   // Count sources and articles
   const sourceCount = Object.keys(headlinesBySource).length
   const headlineCount = group.count || group.headlines.length
+
+  // Check if we have a successful image or error information
+  const hasSuccessfulImage = group.image && group.image.url && !group.image.error
+  const hasImageError = group.image && group.image.error
+  const shouldShowImageContainer = hasSuccessfulImage || hasImageError
 
   return (
     <div className="bg-gray-700/80 rounded-xl overflow-hidden transition-all duration-200 border border-gray-600/50 shadow-md h-full flex flex-col hover:shadow-lg hover:border-indigo-800/50">
@@ -60,18 +76,111 @@ const TopicGroupCard: React.FC<TopicGroupCardProps> = ({ group, isExpanded, onTo
         </div>
       </div>
 
-      {/* EXPERIMENTAL FEATURE: Topic Image */}
-      {topicImage && (
-        <div className="relative h-32 overflow-hidden">
-          <img src={topicImage || "/placeholder.svg"} alt={group.topic_name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 to-transparent"></div>
-          <div className="absolute bottom-2 left-2 flex items-center text-xs text-white bg-gray-900/60 px-2 py-1 rounded">
-            <ImageIcon className="h-3 w-3 mr-1" />
-            <span>Topic visualization</span>
-          </div>
+      {/* =====================================================================
+          EXPERIMENTAL FEATURE: Real Article Image Header with Error Display
+          This section displays an image extracted from news articles OR shows error information
+          The image data is saved in the JSON and comes from the Python backend
+          If you want to remove this feature, delete this entire div block
+          ===================================================================== */}
+      {shouldShowImageContainer && (
+        <div className="relative h-40 overflow-hidden">
+          {hasSuccessfulImage && !imageError ? (
+            <>
+              {/* Successful image display */}
+              <img
+                src={group.image!.url || "/placeholder.svg"}
+                alt={group.image!.alt}
+                className="w-full h-full object-cover"
+                onError={() => setImageError(true)}
+                crossOrigin="anonymous"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 to-transparent"></div>
+
+              {/* Image info overlay */}
+              <div className="absolute bottom-2 left-2 flex items-center text-xs text-white bg-gray-900/80 px-2 py-1 rounded max-w-[60%]">
+                <ImageIcon className="h-3 w-3 mr-1 flex-shrink-0" />
+                <span className="truncate">{group.image!.alt}</span>
+              </div>
+
+              {/* Source link */}
+              <div className="absolute bottom-2 right-2">
+                <a
+                  href={group.image!.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center text-xs text-white bg-gray-900/80 px-2 py-1 rounded hover:bg-gray-800/90 transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLinkIcon className="h-3 w-3 mr-1" />
+                  <span>Source</span>
+                </a>
+              </div>
+
+              Experimental badge
+              <div className="absolute top-2 right-2 flex items-center text-xs text-yellow-300 bg-yellow-900/80 px-2 py-1 rounded">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                <span>Experimental</span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Error display */}
+              <div className="w-full h-full bg-gray-800/90 flex flex-col items-center justify-center p-4">
+                <div className="text-center space-y-2">
+                  <AlertCircle className="h-8 w-8 text-red-400 mx-auto" />
+                  <div className="text-sm text-red-300 font-medium">Image Extraction Failed</div>
+                  <div className="text-xs text-gray-300 max-w-full">
+                    {group.image?.error_type === "ExtractionFailure" ? (
+                      <div className="space-y-1">
+                        <div>Tried {group.image.total_attempts} sources:</div>
+                        <div className="text-xs text-gray-400">{group.image.attempted_sources?.join(", ")}</div>
+                      </div>
+                    ) : (
+                      <div className="truncate">{group.image?.error || "Unknown error"}</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Error details button */}
+                {group.image?.detailed_errors && group.image.detailed_errors.length > 0 && (
+                  <div className="absolute bottom-2 left-2">
+                    <div className="group relative">
+                      <div className="flex items-center text-xs text-gray-300 bg-gray-900/80 px-2 py-1 rounded cursor-help">
+                        <Info className="h-3 w-3 mr-1" />
+                        <span>Error Details</span>
+                      </div>
+                      <div className="absolute bottom-full mb-2 left-0 bg-gray-900 text-xs text-white p-3 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity w-64 pointer-events-none z-10">
+                        <div className="space-y-2">
+                          {group.image.detailed_errors.slice(0, 3).map((error, idx) => (
+                            <div key={idx} className="border-b border-gray-700 pb-1 last:border-0">
+                              <div className="font-medium text-red-300">{error.source}</div>
+                              <div className="text-gray-400 truncate">{error.error}</div>
+                            </div>
+                          ))}
+                          {group.image.detailed_errors.length > 3 && (
+                            <div className="text-gray-500 text-center">
+                              +{group.image.detailed_errors.length - 3} more errors
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Experimental badge
+                <div className="absolute top-2 right-2 flex items-center text-xs text-yellow-300 bg-yellow-900/80 px-2 py-1 rounded">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  <span>Experimental</span>
+                </div> */}
+              </div>
+            </>
+          )}
         </div>
       )}
-      {/* END OF EXPERIMENTAL FEATURE */}
+      {/* =====================================================================
+          END OF EXPERIMENTAL FEATURE
+          ===================================================================== */}
 
       {/* Collapsible Content */}
       <div

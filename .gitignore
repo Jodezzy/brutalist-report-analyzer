@@ -53,6 +53,7 @@ src-tauri/Cargo.lock # Optional: if you're using Cargo.lock only for deployment,
 .cache/
 .out/
 build/
+trash/
 
 # Optional: if using pnpm
 .pnpm-debug.log

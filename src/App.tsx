@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { BarChart2, TrendingUp, Globe } from "lucide-react";
+import { useState } from "react";
+import { BarChart2, TrendingUp, Globe, FolderOpen } from "lucide-react";
 import TopicSelector from "./components/TopicSelector";
 import JobStatus from "./components/JobStatus";
 import ResultsView from "./components/ResultsView";
+import Button from "./components/ui/Button";
 import { useAnalysis } from "./hooks/useAnalysis";
 import type { AnalysisResult } from "./types/analysis";
 
@@ -12,7 +13,6 @@ function App() {
 	const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
 	const [timeRange, setTimeRange] = useState<"today" | "last-week">("today");
 	const { startAnalysis, status, result, message, loadFromFile, saveToFile, processedCount, totalCount } = useAnalysis();
-
 
 	const handleStartAnalysis = () => {
 		startAnalysis(selectedTopic, timeRange === "last-week");
@@ -32,27 +32,30 @@ function App() {
 						<rect width="100%" height="100%" fill="url(#grid)" />
 					</svg>
 				</div>
-				<div className="container mx-auto px-4 py-4 flex items-center space-x-4 relative">
-					<div className="bg-indigo-600 p-2 rounded-lg shadow-lg h-12 w-12 flex items-center justify-center">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="24"
-							height="24"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							className="h-8 w-8 text-white"
-						>
-							<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path>
-							<path d="M18 14h-8"></path>
-							<path d="M18 10h-8"></path>
-							<path d="M18 6h-8"></path>
-						</svg>
+				<div className="container mx-auto px-4 py-4 flex items-center justify-between relative">
+					<div className="flex items-center space-x-4">
+						<div className="bg-indigo-600 p-2 rounded-lg shadow-lg h-12 w-12 flex items-center justify-center">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="24"
+								height="24"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								className="h-8 w-8 text-white"
+							>
+								<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path>
+								<path d="M18 14h-8"></path>
+								<path d="M18 10h-8"></path>
+								<path d="M18 6h-8"></path>
+							</svg>
+						</div>
+						<h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-indigo-200">Brutalist Report Analyzer</h1>
 					</div>
-					<h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-indigo-200">Brutalist Report Analyzer</h1>
+
 				</div>
 			</header>
 
@@ -75,6 +78,7 @@ function App() {
 							onSelectTimeRange={setTimeRange}
 							onStartAnalysis={handleStartAnalysis}
 							isLoading={status === "loading"}
+							loadFromFile={loadFromFile}
 						/>
 					</div>
 				</section>

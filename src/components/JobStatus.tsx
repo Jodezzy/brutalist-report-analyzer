@@ -12,6 +12,9 @@ const JobStatus: React.FC<JobStatusProps> = ({ status, message, processedCount, 
   // Calculate progress percentage
   const progressPercentage = processedCount && totalCount ? Math.round((processedCount / totalCount) * 100) : 0
 
+  // Check if this is a date processing message
+  const isDateProcessing = message.includes("Processing date") || message.includes("date")
+
   return (
     <div className="bg-gray-700/80 rounded-xl p-5 border border-gray-600/50 shadow-md relative overflow-hidden">
       <div className="absolute inset-0 opacity-5">
@@ -51,7 +54,8 @@ const JobStatus: React.FC<JobStatusProps> = ({ status, message, processedCount, 
           {status === "loading" && (
             <>
               Analysis in progress
-              {processedCount !== undefined && totalCount !== undefined && (
+              {/* Show different info based on message type */}
+              {!isDateProcessing && processedCount !== undefined && totalCount !== undefined && (
                 <span className="text-indigo-200/80 ml-2">
                   ({processedCount} of {totalCount} headlines)
                 </span>
@@ -63,7 +67,7 @@ const JobStatus: React.FC<JobStatusProps> = ({ status, message, processedCount, 
         </span>
       </div>
 
-      {status === "loading" && (
+      {status === "loading" && !isDateProcessing && processedCount !== undefined && totalCount !== undefined && (
         <div className="space-y-2 my-4 relative">
           <div className="w-full bg-gray-600/50 rounded-full h-2.5 overflow-hidden">
             <div
